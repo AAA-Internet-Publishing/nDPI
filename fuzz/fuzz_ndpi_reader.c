@@ -18,13 +18,13 @@ u_int8_t enable_protocol_guess = 1, enable_payload_analyzer = 0;
 u_int8_t enable_flow_stats = 1;
 u_int8_t human_readeable_string_len = 5;
 u_int8_t max_num_udp_dissected_pkts = 16 /* 8 is enough for most protocols, Signal requires more */, max_num_tcp_dissected_pkts = 80 /* due to telnet */;
-ndpi_init_prefs init_prefs = ndpi_track_flow_payload | ndpi_enable_ja3_plus;
+ndpi_init_prefs init_prefs = ndpi_track_flow_payload | ndpi_enable_ja3_plus | ndpi_enable_tcp_ack_payload_heuristic;
 int enable_malloc_bins = 1;
 int malloc_size_stats = 0;
-int max_malloc_bins = 0;
+int max_malloc_bins = 14;
 struct ndpi_bin malloc_bins; /* unused */
 
-extern void ndpi_report_payload_stats(int print);
+extern void ndpi_report_payload_stats(FILE *out);
 
 #ifdef CRYPT_FORCE_NO_AESNI
 extern int force_no_aesni;
@@ -152,7 +152,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   ndpi_free(workflow->ndpi_flows_root);
   /* Free payload analyzer data, without printing */
   if(enable_payload_analyzer)
-    ndpi_report_payload_stats(0);
+    ndpi_report_payload_stats(NULL);
 
   return 0;
 }

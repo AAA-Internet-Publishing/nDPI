@@ -427,6 +427,19 @@ extern "C" {
    * @par    ndpi_struct  = the detection module
    * @par    flow         = the flow we're trying to guess, NULL if not available
    * @par    proto        = the l4 protocol number
+   * @return the struct ndpi_protocol that match the port base protocol
+   *
+   */
+  ndpi_protocol ndpi_guess_undetected_protocol(struct ndpi_detection_module_struct *ndpi_struct,
+					       struct ndpi_flow_struct *flow,
+					       u_int8_t proto);
+
+  /**
+   * Superset of ndpi_guess_undetected_protocol with additional IPv4 guess based on host/port
+   *
+   * @par    ndpi_struct  = the detection module
+   * @par    flow         = the flow we're trying to guess, NULL if not available
+   * @par    proto        = the l4 protocol number
    * @par    shost        = source address in host byte order
    * @par    sport        = source port number
    * @par    dhost        = destination address in host byte order
@@ -434,13 +447,13 @@ extern "C" {
    * @return the struct ndpi_protocol that match the port base protocol
    *
    */
-  ndpi_protocol ndpi_guess_undetected_protocol(struct ndpi_detection_module_struct *ndpi_struct,
-					       struct ndpi_flow_struct *flow,
-					       u_int8_t proto,
-					       u_int32_t shost,
-					       u_int16_t sport,
-					       u_int32_t dhost,
-					       u_int16_t dport);
+  ndpi_protocol ndpi_guess_undetected_protocol_v4(struct ndpi_detection_module_struct *ndpi_struct,
+						  struct ndpi_flow_struct *flow,
+						  u_int8_t proto,
+						  u_int32_t shost,
+						  u_int16_t sport,
+						  u_int32_t dhost,
+						  u_int16_t dport);
   /**
    * Check if the string passed match with a protocol
    *
@@ -982,6 +995,7 @@ extern "C" {
 					      u_int16_t user_proto_id);
   u_int16_t ndpi_map_ndpi_id_to_user_proto_id(struct ndpi_detection_module_struct *ndpi_str,
 					      u_int16_t ndpi_proto_id);
+  void ndpi_self_check_host_match(FILE *error_out);
 
   /* Tells to called on what l4 protocol given application protocol can be found */
   ndpi_l4_proto_info ndpi_get_l4_proto_info(struct ndpi_detection_module_struct *ndpi_struct, u_int16_t ndpi_proto_id);
@@ -1113,6 +1127,7 @@ extern "C" {
 		     struct ndpi_flow_struct *flow,
 		     u_int8_t ip_version,
 		     u_int8_t l4_protocol,
+		     u_int16_t vlan_id,
 		     u_int32_t src_v4, u_int32_t dst_v4,
 		     struct ndpi_in6_addr *src_v6, struct ndpi_in6_addr *dst_v6,
 		     u_int16_t src_port, u_int16_t dst_port,
@@ -1684,7 +1699,7 @@ extern "C" {
   void ndpi_init_data_analysis(struct ndpi_analyze_struct *s, u_int16_t _max_series_len);
   void ndpi_free_data_analysis(struct ndpi_analyze_struct *d, u_int8_t free_pointer);
   void ndpi_reset_data_analysis(struct ndpi_analyze_struct *d);
-  void ndpi_data_add_value(struct ndpi_analyze_struct *s, const u_int32_t value);
+  void ndpi_data_add_value(struct ndpi_analyze_struct *s, const u_int64_t value);
 
   /* Sliding-window only */
   float ndpi_data_window_average(struct ndpi_analyze_struct *s);
@@ -1697,7 +1712,7 @@ extern "C" {
   float ndpi_data_variance(struct ndpi_analyze_struct *s);
   float ndpi_data_stddev(struct ndpi_analyze_struct *s);
   float ndpi_data_mean(struct ndpi_analyze_struct *s);
-  u_int32_t ndpi_data_last(struct ndpi_analyze_struct *s);
+  u_int64_t ndpi_data_last(struct ndpi_analyze_struct *s);
   u_int32_t ndpi_data_min(struct ndpi_analyze_struct *s);
   u_int32_t ndpi_data_max(struct ndpi_analyze_struct *s);
   float ndpi_data_ratio(u_int32_t sent, u_int32_t rcvd);
@@ -1714,13 +1729,15 @@ extern "C" {
 		    double alpha, double beta, double gamma, float significance);
   void ndpi_hw_free(struct ndpi_hw_struct *hw);
   int  ndpi_hw_add_value(struct ndpi_hw_struct *hw, const u_int64_t value, double *forecast,  double *confidence_band);
-
+  void ndpi_hw_reset(struct ndpi_hw_struct *hw);
+  
   /* ******************************* */
 
   int ndpi_ses_init(struct ndpi_ses_struct *ses, double alpha, float significance);
   int ndpi_ses_add_value(struct ndpi_ses_struct *ses, const double _value, double *forecast, double *confidence_band);
   void ndpi_ses_fitting(double *values, u_int32_t num_values, float *ret_alpha);
-
+  void ndpi_ses_reset(struct ndpi_ses_struct *ses);
+  
   /* ******************************* */
 
   u_int32_t ndpi_crc32(const void* data, size_t n_bytes);
@@ -1730,7 +1747,8 @@ extern "C" {
   int ndpi_des_init(struct ndpi_des_struct *des, double alpha, double beta, float significance);
   int ndpi_des_add_value(struct ndpi_des_struct *des, const double _value, double *forecast, double *confidence_band);
   void ndpi_des_fitting(double *values, u_int32_t num_values, float *ret_alpha, float *ret_beta);
-
+  void ndpi_des_reset(struct ndpi_des_struct *des);
+  
   /* ******************************* */
 
   int   ndpi_jitter_init(struct ndpi_jitter_struct *hw, u_int16_t num_periods);
@@ -1816,6 +1834,22 @@ extern "C" {
 
   /* ******************************* */
 
+  /*
+   * Predicts a value using simple linear regression
+   * Z-Score = (Value - Mean) / StdDev
+   *
+   * @par    values          = pointer to the individual values to be analyzed [in]
+   * @par    num_values      = number of 'values' [in]
+   * @par    predict_periods = number of periods for which we want to make the prediction [in]
+   * @par    prediction      = predicted value after 'predict_periods' [out]
+   *
+   * @return The number of outliers found
+  */
+  int ndpi_predict_linear(u_int32_t *values, u_int32_t num_values,
+			  u_int32_t predict_periods, u_int32_t *prediction);
+
+  /* ******************************* */
+
   u_int32_t ndpi_quick_16_byte_hash(u_int8_t *in_16_bytes_long);
 
   /* ******************************* */
@@ -1897,6 +1931,7 @@ extern "C" {
 
   void ndpi_bitmap_and(ndpi_bitmap* a, ndpi_bitmap* b_and);
   void ndpi_bitmap_or(ndpi_bitmap* a, ndpi_bitmap* b_or);
+  void ndpi_bitmap_xor(ndpi_bitmap* a, ndpi_bitmap* b_xor);
 
   ndpi_bitmap_iterator* ndpi_bitmap_iterator_alloc(ndpi_bitmap* b);
   void ndpi_bitmap_iterator_free(ndpi_bitmap* b);
@@ -1907,6 +1942,25 @@ extern "C" {
   char* ndpi_get_flow_risk_info(struct ndpi_flow_struct *flow,
 				char *out, u_int out_len,
 				u_int8_t use_json);
+
+  /* ******************************* */
+
+  /**
+   * Set user data which can later retrieved with `ndpi_get_user_data()`.
+   *
+   * @par ndpi_str = the struct created for the protocol detection
+   * @par user_data = user data pointer you want to retrieve later with `ndpi_get_user_data()`
+   *
+   */
+  void ndpi_set_user_data(struct ndpi_detection_module_struct *ndpi_str, void *user_data);
+
+  /**
+   * Get user data which was previously set with `ndpi_set_user_data()`.
+   *
+   * @return the user data pointer
+   *
+   */
+  void *ndpi_get_user_data(struct ndpi_detection_module_struct *ndpi_str);
 
 #ifdef __cplusplus
 }

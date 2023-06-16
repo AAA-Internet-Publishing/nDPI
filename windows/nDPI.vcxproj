@@ -141,6 +141,8 @@
     <ClCompile Include="..\src\lib\protocols\apple_push.c" />
     <ClCompile Include="..\src\lib\protocols\avast.c" />
     <ClCompile Include="..\src\lib\protocols\avast_securedns.c" />
+    <ClCompile Include="..\src\lib\protocols\bacnet.c" />
+    <ClCompile Include="..\src\lib\protocols\bitcoin.c" />
     <ClCompile Include="..\src\lib\protocols\bjnp.c" />
     <ClCompile Include="..\src\lib\protocols\capwap.c" />
     <ClCompile Include="..\src\lib\protocols\cassandra.c" />
@@ -155,6 +157,7 @@
     <ClCompile Include="..\src\lib\protocols\dnscrypt.c" />
     <ClCompile Include="..\src\lib\protocols\elastic_search.c" />
     <ClCompile Include="..\src\lib\protocols\ethernet_ip.c" />
+    <ClCompile Include="..\src\lib\protocols\epicgames.c" />
     <ClCompile Include="..\src\lib\protocols\fastcgi.c" />
     <ClCompile Include="..\src\lib\protocols\fix.c" />
     <ClCompile Include="..\src\lib\protocols\genshin_impact.c" />
@@ -232,6 +235,7 @@
     <ClCompile Include="..\src\lib\protocols\h323.c" />
     <ClCompile Include="..\src\lib\protocols\halflife2_and_mods.c" />
     <ClCompile Include="..\src\lib\protocols\hangout.c" />
+    <ClCompile Include="..\src\lib\protocols\hots.c" />
     <ClCompile Include="..\src\lib\protocols\http.c" />
     <ClCompile Include="..\src\lib\protocols\iax.c" />
     <ClCompile Include="..\src\lib\protocols\icecast.c" />
@@ -260,6 +264,7 @@
     <ClCompile Include="..\src\lib\protocols\noe.c" />
     <ClCompile Include="..\src\lib\protocols\non_tcp_udp.c" />
     <ClCompile Include="..\src\lib\protocols\ntp.c" />
+    <ClCompile Include="..\src\lib\protocols\oicq.c" />
     <ClCompile Include="..\src\lib\protocols\openvpn.c" />
     <ClCompile Include="..\src\lib\protocols\oracle.c" />
     <ClCompile Include="..\src\lib\protocols\postgres.c" />
@@ -282,6 +287,7 @@
     <ClCompile Include="..\src\lib\protocols\skype.c" />
     <ClCompile Include="..\src\lib\protocols\smb.c" />
     <ClCompile Include="..\src\lib\protocols\socks45.c" />
+    <ClCompile Include="..\src\lib\protocols\source_engine.c" />
     <ClCompile Include="..\src\lib\protocols\spotify.c" />
     <ClCompile Include="..\src\lib\protocols\ssdp.c" />
     <ClCompile Include="..\src\lib\protocols\ssh.c" />

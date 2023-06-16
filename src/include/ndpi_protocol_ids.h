@@ -70,7 +70,7 @@ typedef enum {
   NDPI_PROTOCOL_SIGNAL                = 39,
   NDPI_PROTOCOL_MEMCACHED             = 40, /* Memcached */
   NDPI_PROTOCOL_SMBV23                = 41, /* SMB version 2/3 */
-  NDPI_PROTOCOL_MINING                = 42, /* Bitcoin, Ethereum, ZCash, Monero */
+  NDPI_PROTOCOL_MINING                = 42, /* Ethereum, ZCash, Monero */
   NDPI_PROTOCOL_NEST_LOG_SINK         = 43, /* Nest Log Sink (Nest Protect) */
   NDPI_PROTOCOL_MODBUS                = 44, /* Modbus */
   NDPI_PROTOCOL_WHATSAPP_CALL         = 45, /* WhatsApp video ad audio calls go here */
@@ -361,10 +361,22 @@ typedef enum {
   NDPI_PROTOCOL_ELASTICSEARCH         = 330,
   NDPI_PROTOCOL_TUYA_LP               = 331, /* TUYA LAN Protocol; IoT OS: https://github.com/tuya/tuya-iotos-embeded-sdk-wifi-ble-bk7231n */
   NDPI_PROTOCOL_TPLINK_SHP            = 332, /* TP-LINK Smart Home Protocol */
-  NDPI_PROTOCOL_COD                   = 333,
-  NDPI_PROTOCOL_MORTAL_KOMBAT         = 334,
-  NDPI_PROTOCOL_ROCKET_LEAGUE         = 335,
-  NDPI_PROTOCOL_WORLD_OF_TANKS        = 336,
+  NDPI_PROTOCOL_SOURCE_ENGINE         = 333,
+  NDPI_PROTOCOL_BACNET                = 334,
+  NDPI_PROTOCOL_OICQ                  = 335,
+  NDPI_PROTOCOL_HOTS                  = 336, /* Heroes of the Storm */
+  NDPI_PROTOCOL_FACEBOOK_REEL_STORY   = 337,
+  NDPI_PROTOCOL_SRTP                  = 338,
+  NDPI_PROTOCOL_GAMBLING              = 339,
+  NDPI_PROTOCOL_EPICGAMES             = 340,
+  NDPI_PROTOCOL_GEFORCENOW            = 341,
+  NDPI_PROTOCOL_NVIDIA                = 342,
+  NDPI_PROTOCOL_BITCOIN               = 343, 
+  NDPI_PROTOCOL_PROTONVPN             = 344,
+  NDPI_PROTOCOL_COD                   = 345,
+  NDPI_PROTOCOL_MORTAL_KOMBAT         = 346,
+  NDPI_PROTOCOL_ROCKET_LEAGUE         = 347,
+  NDPI_PROTOCOL_WORLD_OF_TANKS        = 348,
 
 #ifdef CUSTOM_NDPI_PROTOCOLS
 #include "../../../nDPI-custom/custom_ndpi_protocol_ids.h"

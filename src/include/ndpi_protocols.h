@@ -43,11 +43,13 @@ ndpi_port_range* ndpi_build_default_ports(ndpi_port_range *ports,
 					  u_int16_t portE);
 
 /* TCP/UDP protocols */
+#ifdef __cplusplus
+extern "C"
+#endif
 u_int ndpi_search_tcp_or_udp_raw(struct ndpi_detection_module_struct *ndpi_struct,
 				 struct ndpi_flow_struct *flow,
 				 u_int8_t protocol,
-				 u_int32_t saddr, u_int32_t daddr,
-				 u_int16_t sport, u_int16_t dport);
+				 u_int32_t saddr, u_int32_t daddr);
 
 
 void init_diameter_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
@@ -56,8 +58,6 @@ void init_armagetron_dissector(struct ndpi_detection_module_struct *ndpi_struct,
 void init_amqp_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_bgp_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_bittorrent_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
-int ndpi_search_into_bittorrent_cache(struct ndpi_detection_module_struct *ndpi_struct, struct ndpi_flow_struct *flow,
-				      u_int32_t saddr, u_int16_t sport, u_int32_t daddr, u_int16_t dport);
 void init_lisp_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_teredo_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_ciscovpn_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
@@ -80,6 +80,7 @@ void init_hsrp_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int
 void init_guildwars_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_h323_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_halflife2_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
+void init_hots_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_http_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_iax_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_icecast_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
@@ -237,10 +238,16 @@ void init_tuya_lp_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_
 void init_tplink_shp_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_merakicloud_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_tailscale_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
+void init_source_engine_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
+void init_bacnet_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
+void init_oicq_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
+void init_epicgames_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
+void init_bitcoin_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_cod_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_mortal_kombat_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_rocket_league_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
 void init_world_of_tanks_dissector(struct ndpi_detection_module_struct *ndpi_struct, u_int32_t *id);
+
 /* ndpi_main.c */
 extern u_int32_t ndpi_ip_port_hash_funct(u_int32_t ip, u_int16_t port);
 

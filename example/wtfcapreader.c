@@ -17,6 +17,7 @@
  *
  */
 
+//#define WTFAST_SERIALIZE
 
 #ifndef WIN32
 #include <arpa/inet.h>
@@ -33,7 +34,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#ifdef WTFAST_SERIALIZE
 #include <fcntl.h>
+#endif
 
 #define LOG_FATAL    (1)
 #define LOG_ERR      (2)
@@ -55,6 +59,9 @@
 #define IDLE_SCAN_PERIOD 10000	/* msec */
 #define MAX_IDLE_TIME 300000	/* msec */
 #define INITIAL_THREAD_HASH 0x03dd018b
+#ifdef WTFAST_SERIALIZE
+#define PIPE_FILE "/tmp/dpi.io"
+#endif
 
 #ifndef ETH_P_IP
 #define ETH_P_IP 0x0800
@@ -122,7 +129,9 @@ struct nDPI_flow_info
 	uint8_t tls_client_hello_seen:1;
 	uint8_t tls_server_hello_seen:1;
 	uint8_t flow_info_printed:1;
+#ifdef WTFAST_SERIALIZE
 	uint8_t flow_info_wtfast_json_sent:1;
+#endif
 	uint8_t reserved_00:1;
 	uint8_t l4_protocol;
 
@@ -130,6 +139,9 @@ struct nDPI_flow_info
 	struct ndpi_proto guessed_protocol;
 
 	struct ndpi_flow_struct *ndpi_flow;
+#ifdef WTFAST_SERIALIZE
+	ndpi_serializer ndpi_flow_serializer;
+#endif
 };
 
 struct nDPI_workflow
@@ -157,7 +169,9 @@ struct nDPI_workflow
 	unsigned long long int total_idle_flows;
 
 	struct ndpi_detection_module_struct *ndpi_struct;
-	ndpi_serializer ndpi_flow_serializer;
+#ifdef WTFAST_SERIALIZE
+	ndpi_serialization_format ndpi_serialization_format;
+#endif
 };
 
 struct nDPI_reader_thread
@@ -165,7 +179,6 @@ struct nDPI_reader_thread
 	struct nDPI_workflow *workflow;
 	pthread_t thread_id;
 	uint32_t array_index;
-	int fifo_fd;
 };
 
 static struct nDPI_reader_thread reader_threads[MAX_READER_THREADS] = { };
@@ -178,9 +191,12 @@ static volatile long int flow_id = 0;
 static char *g_category;			// Only show results for this category
 static uint8_t g_log_verbosity;		// Debug log output level
 static char *g_pcap_or_device;		// Name of pcap file or device
-static char *g_fifo_name;				// Filename of named pipe that will receive serialized classification results
 static char *g_one_proto;			// Only show classifications of this protocol eg: MortalKombat
 static char *g_bpf_filter;			// Filter
+
+#ifdef WTFAST_SERIALIZE
+int pipe_fd = 0;
+#endif
 
 static void free_workflow(struct nDPI_workflow **const workflow);
 
@@ -251,17 +267,13 @@ static struct nDPI_workflow *init_workflow(char const *const file_or_device)
 	ndpi_set_protocol_detection_bitmask2(workflow->ndpi_struct, &protos);
 	ndpi_finalize_initialization(workflow->ndpi_struct);
 
-	if (ndpi_init_serializer(&workflow->ndpi_flow_serializer, ndpi_serialization_format_json) != 0) {
-		fprintf(stderr, "serializer init failed\n");
-		return NULL;
-	}
-
 	return workflow;
 }
 
 static void ndpi_flow_info_freer(void *const node)
 {
 	struct nDPI_flow_info *const flow = (struct nDPI_flow_info *)node;
+
 	ndpi_flow_free(flow->ndpi_flow);
 	ndpi_free(flow);
 }
@@ -287,7 +299,6 @@ static void free_workflow(struct nDPI_workflow **const workflow)
 	}
 	ndpi_free(w->ndpi_flows_active);
 	ndpi_free(w->ndpi_flows_idle);
-	ndpi_term_serializer(&w->ndpi_flow_serializer);
 	ndpi_free(w);
 	*workflow = NULL;
 }
@@ -353,45 +364,19 @@ static int ip_tuple_to_string(struct nDPI_flow_info const *const flow, char *con
 	return 0;
 }
 
-static void send_to_fifo(int fd, char const * const json_str, size_t json_str_len)
+#ifdef WTFAST_SERIALIZE
+static char *serializeClassifiedFlowData(struct ndpi_detection_module_struct *ndpi_struct, struct nDPI_flow_info *flow, uint32_t * len)
 {
-	/*
-	Consider what the reading side expects as a delimiter to mark the end of a
-	chunk of serialized data. Perhaps a delimiter needs to be added to the end of
-	each chunk. Currently the serialized data is sent enclosed in curly brackets. 
-	So the reading side	can use '}' as an end of data delimeter.
+	//TODO Currently this func returns the json string directly but sets the
+	//json string length via a parameter.
 
-	Using NULL as a delimiter was problematic during initial development. 
-
-	Also consider that we rely on the underlying OS write mechanism to be thread
-	safe per write (up to some size limit). So if adding a delimiter append it to
-	the serialized data and send in a single write. Don't send the delimiter in a
-	separate write.
-	*/
-
-	if (fd <= 0) {
-		LOG_PRINTF(LOG_WARN, "Not sending json to fifo bad file descriptor\n");
-		return;
-	}
-
-	int ret = write(fd, json_str, json_str_len);
-	if (ret == -1) {
-		LOG_PRINTF(LOG_WARN, "Write to fifo pipe failed err=%s\n",strerror(errno));
-		return;
-	}
-
-	LOG_PRINTF(LOG_DBG, "Wrote %d of %d bytes to fifo %s\n", ret, (int)json_str_len, g_fifo_name);
-}
-
-static void serialize_and_send(struct nDPI_reader_thread *const reader_thread, struct nDPI_flow_info *flow)
-{
 	char *json_str = NULL;
 	u_int32_t json_str_len = 0;
-	struct nDPI_workflow * const workflow = reader_thread->workflow;
-	ndpi_serializer *const serializer = &workflow->ndpi_flow_serializer;
 	char src_addr_str[INET6_ADDRSTRLEN + 1] = { 0 };
 	char dst_addr_str[INET6_ADDRSTRLEN + 1] = { 0 };
 	char l4_proto_name[32];
+
+	ndpi_serializer *const serializer = &flow->ndpi_flow_serializer;
 
 	ndpi_serialize_string_string(serializer, "l4_proto", ndpi_get_ip_proto_name(flow->l4_protocol, l4_proto_name, sizeof(l4_proto_name)));
 
@@ -409,24 +394,23 @@ static void serialize_and_send(struct nDPI_reader_thread *const reader_thread, s
 	}
 
 	char buf[64];
-	ndpi_serialize_string_string(serializer, "l7_proto", ndpi_protocol2name(workflow->ndpi_struct, flow->detected_l7_protocol, buf, sizeof(buf)));
-	ndpi_serialize_string_string(serializer, "l7_proto_id", ndpi_protocol2id(workflow->ndpi_struct, flow->detected_l7_protocol, buf, sizeof(buf)));
+	ndpi_serialize_string_string(serializer, "l7_proto", ndpi_protocol2name(ndpi_struct, flow->detected_l7_protocol, buf, sizeof(buf)));
+	ndpi_serialize_string_string(serializer, "l7_proto_id", ndpi_protocol2id(ndpi_struct, flow->detected_l7_protocol, buf, sizeof(buf)));
 
 	json_str = ndpi_serializer_get_buffer(serializer, &json_str_len);
+
 	if (json_str == NULL || json_str_len == 0) {
 		LOG_PRINTF(LOG_FATAL, "ERROR: nDPI serialization failed\n");
-		ndpi_reset_serializer(serializer);
-		return;
+		exit(-1);				//TODO
 	}
 
-	if (g_fifo_name) {
-		send_to_fifo(reader_thread->fifo_fd, json_str, json_str_len);
-	}
+	LOG_PRINTF(LOG_DBG, "%.*s\n", (int)json_str_len, json_str);
 
-	LOG_PRINTF(LOG_DBG, "Serialized classification result: %s\n", json_str);
+	*len = json_str_len;
 
-	ndpi_reset_serializer(serializer);
+	return json_str;
 }
+#endif
 
 #ifdef VERBOSE
 static void print_packet_info(struct nDPI_reader_thread const *const reader_thread, struct pcap_pkthdr const *const header, uint32_t l4_data_len, struct nDPI_flow_info const *const flow)
@@ -1046,12 +1030,44 @@ ether_recheck_type:
 		}
 	}
 
+#ifdef WTFAST_SERIALIZE
 	if (flow_to_process->detection_completed) {
 		if (!flow_to_process->flow_info_wtfast_json_sent) {
 			flow_to_process->flow_info_wtfast_json_sent = 1;
-			serialize_and_send(reader_thread, flow_to_process);
+
+			char *json_str = NULL;
+			uint32_t json_str_len = 0;
+
+			if (ndpi_init_serializer(&flow_to_process->ndpi_flow_serializer, ndpi_serialization_format_json)
+				!= 0) {
+				fprintf(stderr, "serializer init failed\n");
+				//TODO handle serialization init failure
+			}
+
+			json_str = serializeClassifiedFlowData(workflow->ndpi_struct, flow_to_process, &json_str_len);
+			if (json_str == NULL) {
+				fprintf(stderr, "serializeClassifiedFlowData() failed\n");
+			} else {
+				LOG_PRINTF(LOG_INFO, "%s\n", json_str);
+				// Named pipe for later
+				//int ret;
+				//ret = write(pipe_fd, json_str, json_str_len);
+				//if (ret == -1) {
+				//} else {
+				//fprintf(stderr, "pipe write okay bytes = %d\n", json_str_len);
+				//}
+				//// TODO The reader side expects delimiter '\n'.
+				//// Using NULL was problematic during initial development.
+				//ret = write(pipe_fd, "\n", 1);
+				//if (ret == -1) {
+				//fprintf(stderr, "pipe write failed err= %s\n", strerror(errno));
+				//}
+			}
+
+			ndpi_term_serializer(&flow_to_process->ndpi_flow_serializer);
 		}
 	}
+#endif
 
 	if (flow_to_process->ndpi_flow->num_extra_packets_checked <= flow_to_process->ndpi_flow->max_extra_packets_to_check) {
 		/*
@@ -1124,28 +1140,11 @@ static void break_pcap_loop(struct nDPI_reader_thread *const reader_thread)
 
 static void *processing_thread(void *const ndpi_thread_arg)
 {
-	struct nDPI_reader_thread *const reader_thread = (struct nDPI_reader_thread *)ndpi_thread_arg;
-
-	/*
-	Each thread has its own fd for the fifo. We depend the underlying system write() 
-	provided by the OS to be thread safe.
-	*/
-	if (g_fifo_name == NULL) {
-		LOG_PRINTF(LOG_DBG, "No fifo provided for serialized results\n");
-	} else {
-		if ((reader_thread->fifo_fd = open(g_fifo_name, O_CREAT|O_RDWR)) == -1) {
-			LOG_PRINTF(LOG_DBG, "Failed to open fifo file %s err = %s\n", g_fifo_name, strerror(errno));
-		}
-	}
+	struct nDPI_reader_thread const *const reader_thread = (struct nDPI_reader_thread *)ndpi_thread_arg;
 
 	LOG_PRINTF(LOG_DBG, "Starting Thread %d\n", reader_thread->array_index);
 	run_pcap_loop(reader_thread);
 	__sync_fetch_and_add(&reader_thread->workflow->error_or_eof, 1);
-
-	if (g_fifo_name != NULL && reader_thread->fifo_fd > 0) {
-		close(reader_thread->fifo_fd);
-	}
-
 	return NULL;
 }
 
@@ -1262,12 +1261,11 @@ static void sighandler(int signum)
 
 static void usage(char *appname) 
 {
-	printf("Usage: %s -i <file|device> [-c category] [-p protocol] [-b BPF filter] [-f fifo] [-v loglevel]\n", appname);
+	printf("Usage: %s -i <file|device> [-c category] [-p protocol] [-f BPF filter] [-v loglevel]\n", appname);
 	printf("  -i\tpcap file or device name\n");
-	printf("  -c\tshow only the results for this category eg: Game\n");
-	printf("  -p\tshow only the results for this protocol eg: MortalKombat\n");
-	printf("  -b\tBPF filter(s) eg: \"ether host e8:2a:ea:44:55:66\"\n");
-	printf("  -f\tnamed pipe provided by server that will receive serialized classification results eg: /tmp/dpififo.io\n");
+	printf("  -c\tshow only results for this category eg: Game\n");
+	printf("  -p\tshow only results this protocol eg: MortalKombat\n");
+	printf("  -f\tspecify a BPF filter eg: \"ether host e8:2a:ea:44:55:66\"\n");
 	printf("  -v\tlog verbosity low=1, high=5, default=4\n");
 }
 
@@ -1278,9 +1276,8 @@ int main(int argc, char **argv)
 	g_pcap_or_device = NULL;
 	g_category = NULL;
 	g_one_proto = NULL;
-	g_fifo_name = NULL;
 
-	while ((opt = getopt(argc, argv, "f:b:p:i:c:v:")) != -1) {
+	while ((opt = getopt(argc, argv, "f:p:i:c:v:")) != -1) {
 		switch (opt) {
 			case 'c':
 				g_category = optarg;
@@ -1296,13 +1293,10 @@ int main(int argc, char **argv)
 			case 'i':
 				g_pcap_or_device = optarg;
 				break;
-			case 'f':
-				g_fifo_name = optarg;
-				break;
 			case 'p':
 				g_one_proto = optarg;
 				break;
-			case 'b':
+			case 'f':
 				g_bpf_filter = optarg;
 				break;
 			default:

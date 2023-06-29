@@ -377,6 +377,7 @@ typedef enum {
   NDPI_PROTOCOL_MORTAL_KOMBAT         = 346,
   NDPI_PROTOCOL_ROCKET_LEAGUE         = 347,
   NDPI_PROTOCOL_WORLD_OF_TANKS        = 348,
+  NDPI_PROTOCOL_PING_PONG             = 349,
 
 #ifdef CUSTOM_NDPI_PROTOCOLS
 #include "../../../nDPI-custom/custom_ndpi_protocol_ids.h"

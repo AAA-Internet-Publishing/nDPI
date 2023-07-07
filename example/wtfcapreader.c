@@ -35,6 +35,11 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#ifdef WTFAST_SOCKET
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
+
 #define LOG_FATAL    (1)
 #define LOG_ERR      (2)
 #define LOG_WARN     (3)
@@ -178,9 +183,13 @@ static volatile long int flow_id = 0;
 static char *g_category;			// Only show results for this category
 static uint8_t g_log_verbosity;		// Debug log output level
 static char *g_pcap_or_device;		// Name of pcap file or device
-static char *g_fifo_name;				// Filename of named pipe that will receive serialized classification results
+static char *g_fifo_name;			// Filename of named pipe that will receive serialized classification results
 static char *g_one_proto;			// Only show classifications of this protocol eg: MortalKombat
 static char *g_bpf_filter;			// Filter
+
+#ifdef WTFAST_SOCKET
+static int g_sockfd;				// TODO global?
+#endif
 
 static void free_workflow(struct nDPI_workflow **const workflow);
 
@@ -383,6 +392,36 @@ static void send_to_fifo(int fd, char const * const json_str, size_t json_str_le
 	LOG_PRINTF(LOG_DBG, "Wrote %d of %d bytes to fifo %s\n", ret, (int)json_str_len, g_fifo_name);
 }
 
+static void send_to_socket(int sockfd, char const * const json_str, size_t json_str_len)
+{
+	/*
+	Consider what the reading side expects as a delimiter to mark the end of a
+	chunk of serialized data. Perhaps a delimiter needs to be added to the end of
+	each chunk. Currently the serialized data is sent enclosed in curly brackets. 
+	So the reading side	can use '}' as an end of data delimeter.
+
+	Using NULL as a delimiter was problematic during initial development. 
+
+	Also consider that we rely on the underlying OS write mechanism to be thread
+	safe per write (up to some size limit). So if adding a delimiter append it to
+	the serialized data and send in a single write. Don't send the delimiter in a
+	separate write.
+	*/
+
+	if (sockfd <= 0) {
+		LOG_PRINTF(LOG_WARN, "Not sending json to fifo bad file descriptor\n");
+		return;
+	}
+
+	int ret = write(sockfd, json_str, json_str_len);
+	if (ret == -1) {
+		LOG_PRINTF(LOG_WARN, "Write to socket failed err=%s\n", strerror(errno));
+		return;
+	}
+
+	LOG_PRINTF(LOG_DBG, "Wrote %d of %d bytes to socket\n", ret, (int)json_str_len);
+}
+
 static void serialize_and_send(struct nDPI_reader_thread *const reader_thread, struct nDPI_flow_info *flow)
 {
 	char *json_str = NULL;
@@ -419,10 +458,16 @@ static void serialize_and_send(struct nDPI_reader_thread *const reader_thread, s
 		return;
 	}
 
+	// TODO only for named pipe
 	if (g_fifo_name) {
 		send_to_fifo(reader_thread->fifo_fd, json_str, json_str_len);
 	}
 
+#ifdef WTFAST_SOCKET
+	if (g_sockfd != -1) {
+		send_to_socket(g_sockfd, json_str, json_str_len);
+	}
+#endif
 	LOG_PRINTF(LOG_DBG, "Serialized classification result: %s\n", json_str);
 
 	ndpi_reset_serializer(serializer);
@@ -1248,6 +1293,32 @@ static int stop_reader_threads(void)
 
 	return 0;
 }
+#ifdef WTFAST_SOCKET
+static int connect_tcp()
+{
+	struct sockaddr_in servaddr;
+
+	g_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (g_sockfd == -1) {
+		LOG_PRINTF(LOG_ERR, "Unable to create tcp socket err=%s\n",strerror(errno));
+		return -1;
+	}
+
+	memset(&servaddr, 0, sizeof servaddr);
+	servaddr.sin_family = AF_INET;
+	servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	servaddr.sin_port = htons(8888);
+
+	if (connect(g_sockfd, (struct sockaddr*) &servaddr, sizeof(servaddr)) != 0) {
+		close(g_sockfd);
+		g_sockfd = -1;
+		LOG_PRINTF(LOG_ERR, "Unable to connect to tcp server err=%s\n",strerror(errno));
+		return -1;
+	}
+	
+	return 0;
+}
+#endif 
 
 static void sighandler(int signum)
 {
@@ -1322,6 +1393,11 @@ int main(int argc, char **argv)
 	printf("libgcrypt: %s\n", (ndpi_get_gcrypt_version() == NULL ? "-" : ndpi_get_gcrypt_version()));
 	printf("\n");
 
+#ifdef WTFAST_SOCKET
+	if (!connect_tcp()) {
+		LOG_PRINTF(LOG_DBG, "connect_tcp failed\n");
+	}
+#endif
 	if (setup_reader_threads(g_pcap_or_device) != 0) {
 		fprintf(stderr, "%s: setup_reader_threads failed\n", argv[0]);
 		return -1;
@@ -1336,12 +1412,25 @@ int main(int argc, char **argv)
 	signal(SIGTERM, sighandler);
 	while (__sync_fetch_and_add(&main_thread_shutdown, 0) == 0 && processing_threads_error_or_eof() == 0) {
 		sleep(1);
+#ifdef WTFAST_SOCKET
+		if (g_sockfd == -1) {
+			if (!connect_tcp()) {
+				LOG_PRINTF(LOG_DBG, "re-connect_tcp failed\n");
+			}
+		}
+#endif
 	}
 
 	if (stop_reader_threads() != 0) {
 		fprintf(stderr, "%s: stop_reader_threads\n", argv[0]);
 		return -1;
 	}
+
+#ifdef WTFAST_SOCKET
+	if (g_sockfd != -1) {
+		close(g_sockfd);
+	}
+#endif
 
 	return 0;
 }
